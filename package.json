@@ -1,0 +1,29 @@
+{
+  "name": "packet-capture",
+  "version": "1.0.0",
+  "description": "A local HTTP/HTTPS traffic inspector — MITM proxy with a live web dashboard for viewing requests and responses in real time.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "keywords": [
+    "proxy",
+    "mitm",
+    "http",
+    "https",
+    "traffic-capture",
+    "debugging",
+    "networking"
+  ],
+  "author": "",
+  "license": "UNLICENSED",
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "cors": "^2.8.6",
+    "express": "^5.2.1",
+    "http-mitm-proxy": "^1.1.0",
+    "ws": "^8.21.0"
+  }
+}

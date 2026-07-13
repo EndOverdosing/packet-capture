@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Packet Capture</title>
+    <style>
+        :root {
+            color-scheme: dark;
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            margin: 0;
+            background: #0d0d0f;
+            color: #e4e4e7;
+        }
+
+        header {
+            padding: 16px 24px;
+            border-bottom: 1px solid #262629;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        header h1 {
+            font-size: 16px;
+            font-weight: 600;
+            margin: 0;
+        }
+
+        .status {
+            font-size: 12px;
+            padding: 4px 10px;
+            border-radius: 999px;
+            background: #1c1c1f;
+            color: #888;
+        }
+
+        .status.connected {
+            color: #4ade80;
+        }
+
+        .status.disconnected {
+            color: #f87171;
+        }
+
+        main {
+            padding: 16px 24px;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 13px;
+        }
+
+        th {
+            text-align: left;
+            padding: 8px 10px;
+            color: #888;
+            font-weight: 500;
+            border-bottom: 1px solid #262629;
+            position: sticky;
+            top: 0;
+            background: #0d0d0f;
+        }
+
+        td {
+            padding: 7px 10px;
+            border-bottom: 1px solid #1a1a1c;
+            white-space: nowrap;
+        }
+
+        tr.log-row:hover {
+            background: #16161a;
+            cursor: pointer;
+        }
+
+        .url {
+            max-width: 480px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .status-2xx {
+            color: #4ade80;
+        }
+
+        .status-3xx {
+            color: #facc15;
+        }
+
+        .status-4xx,
+        .status-5xx {
+            color: #f87171;
+        }
+
+        .method {
+            font-weight: 600;
+            color: #93c5fd;
+        }
+
+        .details-row td {
+            white-space: pre-wrap;
+            font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+            font-size: 12px;
+            background: #101012;
+            color: #a1a1aa;
+            display: none;
+        }
+
+        .details-row.open td {
+            display: table-cell;
+        }
+
+        .empty {
+            color: #555;
+            text-align: center;
+            padding: 60px 0;
+            font-size: 13px;
+        }
+    </style>
+</head>
+
+<body>
+
+    <header>
+        <h1>Packet Capture</h1>
+        <span id="status" class="status">connecting…</span>
+    </header>
+
+    <main>
+        <table>
+            <thead>
+                <tr>
+                    <th style="width:90px">Time</th>
+                    <th style="width:70px">Method</th>
+                    <th style="width:60px">Status</th>
+                    <th>URL</th>
+                    <th style="width:80px">Duration</th>
+                </tr>
+            </thead>
+            <tbody id="logs">
+                <tr>
+                    <td colspan="5" class="empty">Waiting for traffic…</td>
+                </tr>
+            </tbody>
+        </table>
+    </main>
+
+    <script>
+        const logs = document.getElementById("logs");
+        const statusEl = document.getElementById("status");
+        let rowCount = 0;
+
+        function statusClass(status) {
+            if (!status) return "";
+            if (status >= 500) return "status-5xx";
+            if (status >= 400) return "status-4xx";
+            if (status >= 300) return "status-3xx";
+            if (status >= 200) return "status-2xx";
+            return "";
+        }
+
+        function addRow(capture) {
+            if (rowCount === 0) logs.innerHTML = "";
+            rowCount++;
+
+            const id = `details-${rowCount}`;
+            const time = new Date(capture.time).toLocaleTimeString();
+
+            const row = document.createElement("tr");
+            row.className = "log-row";
+            row.innerHTML = `
+        <td>${time}</td>
+        <td class="method">${capture.method}</td>
+        <td class="${statusClass(capture.status)}">${capture.status ?? "…"}</td>
+        <td class="url" title="${capture.url}">${capture.url}</td>
+        <td>${capture.durationMs != null ? capture.durationMs + "ms" : ""}</td>
+    `;
+            row.addEventListener("click", () => {
+                document.getElementById(id).classList.toggle("open");
+            });
+
+            const details = document.createElement("tr");
+            details.id = id;
+            details.className = "details-row";
+            const cell = document.createElement("td");
+            cell.colSpan = 5;
+            cell.textContent = JSON.stringify(capture, null, 2);
+            details.appendChild(cell);
+
+            logs.prepend(details);
+            logs.prepend(row);
+        }
+
+        function connect() {
+            const ws = new WebSocket(`ws://${location.host}`);
+
+            ws.onopen = () => {
+                statusEl.textContent = "connected";
+                statusEl.className = "status connected";
+            };
+
+            ws.onclose = () => {
+                statusEl.textContent = "disconnected — retrying…";
+                statusEl.className = "status disconnected";
+                setTimeout(connect, 2000);
+            };
+
+            ws.onerror = () => ws.close();
+
+            ws.onmessage = (event) => {
+                addRow(JSON.parse(event.data));
+            };
+        }
+
+        connect();
+    </script>
+
+</body>
+
+</html>

@@ -15,6 +15,8 @@ Browser / App  →  Proxy (127.0.0.1:8080)  →  Internet
 
 The proxy sits between your client and the internet. Every request and its matching response are captured, written to disk as JSON, and pushed live to the dashboard over a WebSocket.
 
+**Nothing shows up in the dashboard until something is actually configured to send its traffic through the proxy.** Opening the dashboard itself does not capture anything — the dashboard only displays what passes through port `8080`. See [Routing traffic through the proxy](#routing-traffic-through-the-proxy) below.
+
 ## Features
 
 - Live-updating dashboard — no refresh needed
@@ -48,15 +50,64 @@ This starts:
 
 Open the dashboard in a browser, then point traffic at the proxy (see below). Requests will start appearing in the table as they happen.
 
-### Capturing plain HTTP traffic
+## Routing traffic through the proxy
 
-No setup needed. Just point a client at the proxy:
+The proxy does nothing on its own — it only sees traffic that is explicitly sent to `127.0.0.1:8080`. Pick one of the options below depending on what you want to capture.
+
+### Quick sanity check (do this first)
+
+Before configuring a browser, confirm the proxy and dashboard are working end-to-end with a single request:
 
 ```bash
 curl -x http://127.0.0.1:8080 http://example.com
 ```
 
-### Capturing HTTPS traffic (browser)
+Watch `http://localhost:3000` — this request should appear immediately. If it doesn't, the proxy/dashboard setup itself has a problem and browser configuration won't help until that's fixed. If it does appear, the pipeline is healthy and any remaining issue is just about getting your browser to actually use the proxy.
+
+### Option 1 — Launch a browser with a proxy flag (recommended)
+
+This routes only that one browser window through the proxy, in a throwaway profile that doesn't touch your normal browsing, bookmarks, or logins.
+
+**Chrome — Windows:**
+```powershell
+& "C:\Program Files\Google\Chrome\Application\chrome.exe" --proxy-server="127.0.0.1:8080" --user-data-dir="C:\temp\chrome-proxy-profile"
+```
+
+**Chrome — macOS/Linux:**
+```bash
+google-chrome --proxy-server="127.0.0.1:8080" --user-data-dir=/tmp/chrome-proxy-profile
+```
+
+**Edge — Windows:**
+```powershell
+& "C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe" --proxy-server="127.0.0.1:8080" --user-data-dir="C:\temp\edge-proxy-profile"
+```
+
+A new window opens using a fresh, empty profile. Browse there — traffic from that window will stream into the dashboard. View the dashboard itself in your **regular** browser window, not the proxied one, so the dashboard doesn't end up capturing its own traffic.
+
+Start with a plain HTTP site to confirm it's working before trying HTTPS:
+```
+http://neverssl.com
+```
+
+### Option 2 — System-wide proxy (Windows)
+
+This routes traffic from Edge, most other apps, and anything else that respects the OS proxy setting — not just one browser window.
+
+1. Open **Settings → Network & Internet → Proxy**
+2. Under **Manual proxy setup**, turn on **Use a proxy server**
+3. Set Address to `127.0.0.1` and Port to `8080`
+4. Save, then browse normally
+
+**Remember to turn this off when you're done** — while it's on, all your traffic (not just test browsing) is routed through the local proxy, and any app that ignores the OS proxy setting or expects a direct connection may misbehave.
+
+macOS equivalent: **System Settings → Network → \<your connection\> → Details → Proxies → Web Proxy (HTTP) / Secure Web Proxy (HTTPS)**, set to `127.0.0.1:8080`.
+
+### HTTPS sites will show certificate warnings until you trust the CA
+
+Whichever option you use, HTTPS sites will fail with a certificate warning (or fail silently) until the proxy's certificate is trusted — see the next section.
+
+## Capturing HTTPS traffic
 
 HTTPS interception requires trusting the proxy's locally-generated CA certificate. This certificate is unique to your machine and is regenerated fresh on first run — it is never shared or committed anywhere.
 
@@ -79,17 +130,10 @@ HTTPS interception requires trusting the proxy's locally-generated CA certificat
    sudo update-ca-certificates
    ```
 
-3. Launch a browser pointed at the proxy. A throwaway profile is recommended so your normal browsing isn't affected:
+3. Restart the browser profile you're using to proxy traffic (close and relaunch with the same `--user-data-dir`, or just restart the browser if using the system-wide proxy option) so it picks up the newly trusted certificate.
+4. Browse to an HTTPS site. It should load normally with no warning, and the request will appear in the dashboard with the full URL, headers, and status code.
 
-   ```bash
-   # Windows
-   & "C:\Program Files\Google\Chrome\Application\chrome.exe" --proxy-server="127.0.0.1:8080" --user-data-dir="C:\temp\chrome-proxy-profile"
-
-   # macOS / Linux
-   google-chrome --proxy-server="127.0.0.1:8080" --user-data-dir=/tmp/chrome-proxy-profile
-   ```
-
-4. Browse normally in that window. View the live results at `http://localhost:3000` in your regular browser (not the proxied one, to avoid the dashboard capturing its own traffic).
+If you still see a certificate warning after this, double check you trusted the cert for the correct profile — a browser profile that was already open when you ran `certutil`/`security` may need a full restart to pick up the change.
 
 ## Configuration
 
@@ -117,6 +161,20 @@ packet-capture/
 ├── captures/            # Captured traffic, saved as JSON (gitignored)
 └── .http-mitm-proxy/    # Auto-generated CA cert/key (gitignored, never commit)
 ```
+
+## Troubleshooting
+
+**Dashboard shows nothing, even after browsing:**
+Confirm the browser window you're using is actually the proxied one (check the window title bar or that you launched it with the `--proxy-server` flag / confirmed the system proxy is on). A normal, unconfigured browser window will never appear in the dashboard no matter how much you browse in it.
+
+**`curl -x http://127.0.0.1:8080 ...` works but the browser doesn't:**
+This means the proxy and dashboard are healthy — the issue is purely that the browser isn't routing through the proxy. Revisit [Routing traffic through the proxy](#routing-traffic-through-the-proxy).
+
+**HTTPS sites fail or show certificate warnings:**
+The proxy's CA certificate hasn't been trusted yet, or the browser was open before you trusted it. See [Capturing HTTPS traffic](#capturing-https-traffic).
+
+**`EADDRINUSE` or "port already in use" on startup:**
+Something else is already using port `8080` or `3000`. Either stop that process or change the port with `PROXY_PORT` / `DASHBOARD_PORT` (see [Configuration](#configuration)).
 
 ## Security notes
 
